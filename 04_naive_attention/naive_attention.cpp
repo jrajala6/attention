@@ -41,7 +41,7 @@ void naive_attention(const __fp16* Q, const __fp16* K, const __fp16* V, __fp16* 
                     for (size_t hd_idx = 0; hd_idx < head_dim; ++hd_idx)
                         scores[kv_idx] += (float)Q[q_offset + hd_idx] * (float)K[k_offset + hd_idx];
                 
-                    scores[kv_idx] /= scale;
+                    scores[kv_idx] *= scale;
                     max_score = std::max(max_score, scores[kv_idx]);
                 }
 
