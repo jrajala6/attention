@@ -35,6 +35,11 @@ void flash_attention_f16(const __fp16* Q, const __fp16* K, const __fp16* V, __fp
                     size_t block_end = std::min(block_start + BLOCK_SIZE, end_idx);
                     for (size_t kv_idx = block_start; kv_idx < block_end; ++kv_idx)
                     {
+                        if (kv_idx + 1 < block_end) {
+                            size_t next_k_offset = b * num_kv_heads * kv_seq_len * head_dim + (q_head / qkv_ratio) * kv_seq_len * head_dim + (kv_idx + 1) * head_dim;
+                            __builtin_prefetch(K + next_k_offset, 0, 1);
+                        }
+                        
                         size_t q_offset = b * num_q_heads * seq_len * head_dim + q_head * seq_len * head_dim + q_idx * head_dim;
                         size_t k_offset = b * num_kv_heads * kv_seq_len * head_dim + (q_head / qkv_ratio) * kv_seq_len * head_dim + kv_idx * head_dim;
                         size_t v_offset = b * num_kv_heads * kv_seq_len * head_dim + (q_head / qkv_ratio) * kv_seq_len * head_dim + kv_idx * head_dim;
@@ -45,17 +50,19 @@ void flash_attention_f16(const __fp16* Q, const __fp16* K, const __fp16* V, __fp
 
                         float prev_max = running_max;
                         running_max = std::max(running_max, score);
-                        
-                        running_sum = running_sum * exp(prev_max - running_max) + exp(score - running_max);
+                        // FIX 1: Scaled by (prev_max - running_max), NOT (score - running_max)
+                        running_sum = running_sum * fast_expf(prev_max - running_max) + fast_expf(score - running_max);
 
                         if (running_max != prev_max) {
-                            float scale = exp(prev_max - running_max);
+                            float scale = fast_expf(prev_max - running_max);
                             for (size_t i = 0; i < head_dim; ++i)
                                 O_temp[i] *= scale;
                         }
                         
-                        float current_weight = exp(score - running_max);
-                        weighted_accumulate(O_temp, V + v_offset, current_weight, head_dim);
+                        float current_weight = fast_expf(score - running_max);
+                        if (current_weight != 0.0f) 
+                            weighted_accumulate(O_temp, V + v_offset, current_weight, head_dim);
+                        
                     }
                     
                 }

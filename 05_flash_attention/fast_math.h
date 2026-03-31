@@ -1,3 +1,4 @@
+#pragma once
 #include <arm_neon.h>
 
 inline float32x4_t fast_exp_f32x4(float32x4_t x) {
@@ -23,15 +24,20 @@ inline float32x4_t fast_exp_f32x4(float32x4_t x) {
     const float32x4_t c3 = vdupq_n_f32(0.05550410f);
     const float32x4_t c4 = vdupq_n_f32(0.00961812f);
 
-    float32x4_t zf_ln2 = vmulq_f32(zf, ln2);
     float32x4_t p = c4;
-    p = vfmaq_f32(c3, p, zf_ln2);
-    p = vfmaq_f32(c2, p, zf_ln2);
-    p = vfmaq_f32(c1, p, zf_ln2);
-    p = vfmaq_f32(c0, p, zf_ln2);
+    p = vfmaq_f32(c3, p, zf);
+    p = vfmaq_f32(c2, p, zf);
+    p = vfmaq_f32(c1, p, zf);
+    p = vfmaq_f32(c0, p, zf);
 
     int32x4_t exp_bits = vshlq_n_s32(vaddq_s32(zi, vdupq_n_s32(127)), 23);
     float32x4_t exp_val = vreinterpretq_f32_s32(exp_bits);
     
     return vmulq_f32(exp_val, p);
+}
+
+inline float fast_expf(float x) {
+    float32x4_t xv = vdupq_n_f32(x);
+    float32x4_t yv = fast_exp_f32x4(xv);
+    return vgetq_lane_f32(yv, 0);
 }
