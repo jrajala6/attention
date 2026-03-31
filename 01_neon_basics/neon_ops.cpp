@@ -1,9 +1,11 @@
 #include "neon_ops.h"
 
 float dot_product_f16(const __fp16 *a, const __fp16 *b, size_t len) {
-    float32x4_t accum = vdupq_n_f32(0);
+    float32x4_t accum1 = vdupq_n_f32(0);
+    float32x4_t accum2 = vdupq_n_f32(0);
 
-    for (size_t i = 0; i < (len / 8) * 8; i += 8) {
+    size_t vec_len = (len / 8) * 8;
+    for (size_t i = 0; i < vec_len; i += 8) {
         float16x8_t curr_a = vld1q_f16(a + i);
         float16x8_t curr_b = vld1q_f16(b + i);
 
@@ -12,15 +14,16 @@ float dot_product_f16(const __fp16 *a, const __fp16 *b, size_t len) {
         float32x4_t b_low = vcvt_f32_f16(vget_low_f16(curr_b));
         float32x4_t b_high = vcvt_f32_f16(vget_high_f16(curr_b));
 
-        accum = vfmaq_f32(accum, a_low, b_low); // multiply and accumulate 
-        accum = vfmaq_f32(accum, a_high, b_high);
+        accum1 = vfmaq_f32(accum1, a_low, b_low);
+        accum2 = vfmaq_f32(accum2, a_high, b_high);
     }
 
-    float dot_prod = vaddvq_f32(accum);
+    float32x4_t final_accum = vaddq_f32(accum1, accum2);
+    float dot_prod = vaddvq_f32(final_accum);
 
-    // Handle remaining elements
-    for (size_t i = (len / 8) * 8; i < len; ++i)
-        dot_prod += a[i] * b[i];
+
+    for (size_t i = vec_len; i < len; ++i)
+        dot_prod += static_cast<float>(a[i] * b[i]);
 
     return dot_prod;
 }
