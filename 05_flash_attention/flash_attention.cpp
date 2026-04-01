@@ -41,7 +41,10 @@ void flash_attention_f16(const __fp16* Q, const __fp16* K, const __fp16* V, __fp
             {
                 if (kv_idx + 1 < block_end) {
                     size_t next_k_offset = b * num_kv_heads * kv_seq_len * head_dim + (q_head / qkv_ratio) * kv_seq_len * head_dim + (kv_idx + 1) * head_dim;
-                    __builtin_prefetch(K + next_k_offset, 0, 1);
+                    __builtin_prefetch(K + next_k_offset, 0, 1); // read-only and low temporal locality
+
+                    size_t v_offset_prefetch = b * num_kv_heads * kv_seq_len * head_dim + (q_head / qkv_ratio) * kv_seq_len * head_dim + kv_idx * head_dim;
+                    __builtin_prefetch(V + v_offset_prefetch, 0, 1);  // read-only and low temporal locality
                 }
                 
                 size_t q_offset = b * num_q_heads * seq_len * head_dim + q_head * seq_len * head_dim + q_idx * head_dim;

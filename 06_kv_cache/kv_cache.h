@@ -26,12 +26,16 @@ struct KVCache {
     void init(size_t layers, size_t max_seq, size_t heads, size_t dim, CachePrecision prec);
     void reset();
 
-    // Append new KV data (fp16 input → stored as fp16 or quantized to int8)
+    // Append FP16 KV data (for FP16 caches only)
     void append(size_t layer, const __fp16* new_keys, const __fp16* new_values,
                 size_t num_new_tokens);
 
+    // Direct INT8 append with quantization scales
+    void append_int8(size_t layer, const int8_t* new_keys, const int8_t* new_values,
+                    const float* key_scales, const float* value_scales, size_t num_new_tokens);
+
     // Sliding window eviction — keep sinks + recent window
-    void evict_if_needed();
+    void evict_if_needed(size_t additional_tokens = 0);
 
     // Read back — returns contiguous fp16 (dequantizes if int8)
     void get_keys_fp16(size_t layer, __fp16* out) const;
@@ -39,7 +43,9 @@ struct KVCache {
 
     // Direct int8 access (for hybrid attention)
     const int8_t* get_keys_int8(size_t layer) const;
+    const int8_t* get_values_int8(size_t layer) const;
     const float* get_key_scales(size_t layer) const;
+    const float* get_value_scales(size_t layer) const;
 
     void set_window(size_t window, size_t sinks);
     size_t effective_len() const { return current_seq_len; }

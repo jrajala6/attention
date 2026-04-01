@@ -107,6 +107,8 @@ int main() {
     configs.push_back(std::make_pair(std::make_pair(512, 64), std::string("Small (512, h=64)")));
     configs.push_back(std::make_pair(std::make_pair(1024, 128), std::string("Medium (1K, h=128)")));
     configs.push_back(std::make_pair(std::make_pair(2048, 128), std::string("Large (2K, h=128)")));
+    configs.push_back(std::make_pair(std::make_pair(4096, 128), std::string("XLarge (4K, h=128)")));
+    configs.push_back(std::make_pair(std::make_pair(8192, 128), std::string("XXLarge (8K, h=128)")));
 
     std::cout << std::setw(20) << "Configuration"
               << std::setw(15) << "NEON (ms)"
