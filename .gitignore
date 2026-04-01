@@ -1,2 +1,18 @@
 implementation_plan.md
-docs/
+
+# Executable files
+test_neon
+test_threading
+test_quantization
+test_naive_attention
+test_flash_attention
+test_flash_simple
+test_flash_comparison
+
+# Object files
+*.o
+
+# Other build artifacts
+*.dSYM/
+*.dylib
+*.so
