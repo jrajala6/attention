@@ -101,9 +101,6 @@ QuantizationResult benchmark_quantization(size_t total_elements, size_t group_si
 }
 
 int main() {
-    std::cout << "=== QUANTIZATION PERFORMANCE & ACCURACY ANALYSIS ===\n\n";
-    std::cout << "Testing FP16 → INT8 grouped quantization for model compression\n";
-    std::cout << "Evaluating speed, compression ratio, and accuracy preservation\n\n";
 
     // Test different group sizes
     std::vector<std::pair<size_t, std::string> > group_configs;
@@ -113,17 +110,16 @@ int main() {
     group_configs.push_back(std::make_pair(256, std::string("Coarse (256)")));
     group_configs.push_back(std::make_pair(512, std::string("Very coarse (512)")));
 
-    size_t test_elements = 10000000; // 10M elements
+    std::cout << "=== QUANTIZATION PERFORMANCE ===\n";
 
-    std::cout << "=== GROUP SIZE ANALYSIS (10M elements, normal distribution) ===\n";
-    std::cout << std::setw(18) << "Group Size"
-              << std::setw(15) << "Time (ms)"
+    size_t test_elements = 10000000;
+
+    std::cout << std::setw(12) << "Group Size"
               << std::setw(15) << "Throughput"
-              << std::setw(15) << "Compression"
-              << std::setw(15) << "MSE Error"
-              << std::setw(15) << "Max Error"
+              << std::setw(12) << "Compression"
+              << std::setw(12) << "MSE Error"
               << "\n";
-    std::cout << std::string(95, '-') << "\n";
+    std::cout << std::string(55, '-') << "\n";
 
     double best_throughput = 0.0;
     double best_compression = 0.0;
@@ -134,62 +130,22 @@ int main() {
 
         QuantizationResult result = benchmark_quantization(test_elements, group_size, "normal");
 
-        std::cout << std::setw(18) << name
-                  << std::setw(15) << std::fixed << std::setprecision(1) << result.quantize_ms
+        std::cout << std::setw(12) << name
                   << std::setw(15) << std::fixed << std::setprecision(1) << result.throughput_gb_s << " GB/s"
-                  << std::setw(15) << std::fixed << std::setprecision(2) << result.compression_ratio << "x"
-                  << std::setw(15) << std::scientific << std::setprecision(2) << result.mse_error
-                  << std::setw(15) << std::fixed << std::setprecision(4) << result.max_error
+                  << std::setw(12) << std::fixed << std::setprecision(2) << result.compression_ratio << "x"
+                  << std::setw(12) << std::scientific << std::setprecision(1) << result.mse_error
                   << "\n";
 
         best_throughput = std::max(best_throughput, result.throughput_gb_s);
         best_compression = std::max(best_compression, result.compression_ratio);
     }
+    std::cout << std::endl;
 
-    // Test different data distributions with optimal group size
-    std::vector<std::string> data_types;
-    data_types.push_back("normal");
-    data_types.push_back("uniform");
-    data_types.push_back("weights");
 
-    std::cout << "\n=== DATA DISTRIBUTION ANALYSIS (Group size: 128) ===\n";
-    std::cout << std::setw(18) << "Data Type"
-              << std::setw(15) << "Time (ms)"
-              << std::setw(15) << "Throughput"
-              << std::setw(15) << "Compression"
-              << std::setw(15) << "MSE Error"
-              << std::setw(15) << "Max Error"
-              << "\n";
-    std::cout << std::string(95, '-') << "\n";
 
-    for (size_t i = 0; i < data_types.size(); ++i) {
-        QuantizationResult result = benchmark_quantization(test_elements, 128, data_types[i]);
-
-        std::string display_name = data_types[i];
-        if (data_types[i] == "weights") display_name = "Model Weights";
-        else if (data_types[i] == "normal") display_name = "Normal Dist";
-        else if (data_types[i] == "uniform") display_name = "Uniform Dist";
-
-        std::cout << std::setw(18) << display_name
-                  << std::setw(15) << std::fixed << std::setprecision(1) << result.quantize_ms
-                  << std::setw(15) << std::fixed << std::setprecision(1) << result.throughput_gb_s << " GB/s"
-                  << std::setw(15) << std::fixed << std::setprecision(2) << result.compression_ratio << "x"
-                  << std::setw(15) << std::scientific << std::setprecision(2) << result.mse_error
-                  << std::setw(15) << std::fixed << std::setprecision(4) << result.max_error
-                  << "\n";
-    }
-
-    std::cout << "\n=== PERFORMANCE SUMMARY ===\n";
-    std::cout << "• Peak quantization throughput: " << std::fixed << std::setprecision(1) << best_throughput << " GB/s\n";
-    std::cout << "• Maximum compression achieved: " << std::fixed << std::setprecision(1) << best_compression << "x storage reduction\n";
-    std::cout << "• Grouped quantization preserves accuracy while enabling compression\n";
-    std::cout << "• Threading efficiently parallelizes across element groups\n\n";
-
-    std::cout << "• Model size reduced by " << std::fixed << std::setprecision(1)
-              << ((best_compression - 1.0) / best_compression) * 100.0 << "% with minimal accuracy loss\n";
-    std::cout << "• Enables deployment of larger models on memory-constrained devices\n";
-    std::cout << "• Accelerates inference by reducing memory bandwidth requirements\n";
-    std::cout << "• Foundation for mixed-precision and quantization-aware training\n";
+    std::cout << "Quantization: " << std::fixed << std::setprecision(1)
+              << best_compression << "x compression, " << best_throughput << " GB/s, "
+              << ((best_compression - 1.0) / best_compression) * 100.0 << "% size reduction" << std::endl;
 
     return 0;
 }

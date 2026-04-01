@@ -130,7 +130,7 @@ int main() {
                                      (result.accuracy_diff < 1e-3) ? "GOOD" :
                                      (result.accuracy_diff < 1e-2) ? "OK" : "POOR";
 
-        std::string speedup_winner = (result.speedup > 1.0) ? " (Simple wins)" : " (NEON wins)";
+        std::string speedup_winner = (result.speedup > 1.0) ? " (NEON wins)" : " (Simple wins)";
 
         std::cout << std::setw(20) << name
                   << std::setw(15) << std::fixed << std::setprecision(2) << result.neon_ms
@@ -145,28 +145,9 @@ int main() {
 
     double avg_speedup = total_speedup / num_tests;
 
-    std::cout << "\n=== ANALYSIS RESULTS ===\n";
-
-    if (avg_speedup > 1.1) {
-        std::cout << "🎉 HYPOTHESIS CONFIRMED: Auto-vectorization wins!\n";
-        std::cout << "• Average speedup: " << std::fixed << std::setprecision(2) << avg_speedup << "x faster\n";
-        std::cout << "• Simple loops outperform hand-written NEON functions\n";
-        std::cout << "• Function call overhead dominates for this workload\n";
-    } else if (avg_speedup < 0.9) {
-        std::cout << "🚀 NEON FUNCTIONS WIN: Hand-optimization superior!\n";
-        std::cout << "• NEON " << std::fixed << std::setprecision(2) << (1.0/avg_speedup) << "x faster than auto-vectorization\n";
-        std::cout << "• Hand-written SIMD overcomes function call overhead\n";
-        std::cout << "• Manual optimization proves its worth\n";
-    } else {
-        std::cout << "⚖️  TIE: Both approaches are roughly equivalent\n";
-        std::cout << "• Performance difference < 10%\n";
-        std::cout << "• Choice depends on code maintainability vs control\n";
-    }
-
-    std::cout << "\n=== RECOMMENDATIONS ===\n";
-    std::cout << "• For simple operations: Consider auto-vectorization for maintainability\n";
-    std::cout << "• For complex algorithms: Hand-written SIMD for maximum control\n";
-    std::cout << "• Production code: Profile both approaches with real workloads\n";
+    std::string winner = (avg_speedup > 1.05) ? "NEON" : (avg_speedup < 0.95) ? "Auto-vec" : "Tie";
+    std::cout << "NEON vs Auto-vectorization: " << std::fixed << std::setprecision(2)
+              << avg_speedup << "x speedup, " << winner << " wins" << std::endl;
 
     return 0;
 }

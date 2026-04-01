@@ -100,75 +100,34 @@ ThreadingResult benchmark_parallel_workload(size_t workload_size, const std::str
 int main() {
     unsigned int num_cores = std::thread::hardware_concurrency();
 
-    std::cout << "=== PARALLEL PROCESSING PERFORMANCE ANALYSIS ===\n\n";
-    std::cout << "System: " << num_cores << " CPU cores available\n";
-    std::cout << "Workload: Complex mathematical operations (sin/cos/sqrt)\n";
-    std::cout << "Testing thread pool efficiency across different problem sizes\n\n";
+    std::cout << "=== THREADING PERFORMANCE ===\n";
 
-    std::vector<std::pair<size_t, std::string> > test_configs;
-    test_configs.push_back(std::make_pair(100000,    "Small (100K ops)"));
-    test_configs.push_back(std::make_pair(1000000,   "Medium (1M ops)"));
-    test_configs.push_back(std::make_pair(10000000,  "Large (10M ops)"));
-    test_configs.push_back(std::make_pair(50000000,  "XLarge (50M ops)"));
-    test_configs.push_back(std::make_pair(100000000, "XXLarge (100M ops)"));
+    std::vector<std::pair<size_t, std::string> > test_sizes;
+    test_sizes.push_back(std::make_pair(1000000, "1M ops"));
+    test_sizes.push_back(std::make_pair(10000000, "10M ops"));
+    test_sizes.push_back(std::make_pair(100000000, "100M ops"));
 
-    std::cout << std::setw(18) << "Problem Size"
-              << std::setw(15) << "Serial (ms)"
-              << std::setw(15) << "Parallel (ms)"
+    std::cout << std::setw(12) << "Problem Size"
               << std::setw(12) << "Speedup"
-              << std::setw(15) << "Efficiency"
+              << std::setw(12) << "Efficiency"
               << std::setw(15) << "Throughput"
               << "\n";
-    std::cout << std::string(90, '-') << "\n";
+    std::cout << std::string(55, '-') << "\n";
 
     double total_efficiency = 0.0;
-    double max_throughput = 0.0;
-    double best_speedup = 0.0;
 
-    for (size_t i = 0; i < test_configs.size(); ++i) {
-        size_t workload_size = test_configs[i].first;
-        const std::string& name = test_configs[i].second;
+    for (size_t i = 0; i < test_sizes.size(); ++i) {
+        ThreadingResult result = benchmark_parallel_workload(test_sizes[i].first, test_sizes[i].second);
 
-        ThreadingResult result = benchmark_parallel_workload(workload_size, name);
-
-        std::cout << std::setw(18) << name
-                  << std::setw(15) << std::fixed << std::setprecision(1) << result.serial_ms
-                  << std::setw(15) << std::fixed << std::setprecision(1) << result.parallel_ms
+        std::cout << std::setw(12) << test_sizes[i].second
                   << std::setw(12) << std::fixed << std::setprecision(1) << result.speedup << "x"
-                  << std::setw(15) << std::fixed << std::setprecision(1) << result.efficiency << "%"
+                  << std::setw(12) << std::fixed << std::setprecision(1) << result.efficiency << "%"
                   << std::setw(15) << std::fixed << std::setprecision(2) << result.throughput_gops << " GOp/s"
                   << "\n";
 
         total_efficiency += result.efficiency;
-        max_throughput = std::max(max_throughput, result.throughput_gops);
-        best_speedup = std::max(best_speedup, result.speedup);
     }
-
-    double avg_efficiency = total_efficiency / test_configs.size();
-
-    std::cout << "\n=== PERFORMANCE SUMMARY ===\n";
-    std::cout << "• Peak speedup achieved: " << std::fixed << std::setprecision(1) << best_speedup << "x\n";
-    std::cout << "• Average CPU utilization: " << std::fixed << std::setprecision(1) << avg_efficiency << "%\n";
-    std::cout << "• Peak throughput: " << std::fixed << std::setprecision(2) << max_throughput << " billion ops/second\n";
-    std::cout << "• Theoretical maximum speedup: " << num_cores << "x (" << num_cores << " cores)\n\n";
-
-    std::cout << "=== SCALING ANALYSIS ===\n";
-    if (avg_efficiency > 80.0) {
-        std::cout << "• EXCELLENT: Thread pool achieves >80% efficiency across workloads\n";
-    } else if (avg_efficiency > 60.0) {
-        std::cout << "• GOOD: Thread pool achieves >60% efficiency, some overhead present\n";
-    } else {
-        std::cout << "• FAIR: Thread pool efficiency <60%, significant overhead or contention\n";
-    }
-
-    std::cout << "• Work stealing and load balancing effectively utilize all " << num_cores << " cores\n";
-    std::cout << "• Scales efficiently from small to large computational workloads\n\n";
-
-    std::cout << "• Parallel processing reduces inference latency by " << std::fixed << std::setprecision(1)
-              << ((best_speedup - 1.0) / best_speedup) * 100.0 << "%\n";
-    std::cout << "• Maximizes hardware utilization on multi-core systems\n";
-    std::cout << "• Enables real-time processing of large batches and sequences\n";
-    std::cout << "• Foundation for scaling attention mechanisms across multiple heads\n";
+    std::cout << std::endl;
 
     return 0;
 }

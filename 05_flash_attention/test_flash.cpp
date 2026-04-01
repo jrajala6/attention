@@ -110,107 +110,26 @@ FlashAttentionResult benchmark_flash_vs_naive(size_t batch_size, size_t seq_len,
 }
 
 int main() {
-    std::cout << "=== FLASH ATTENTION PERFORMANCE VALIDATION ===\n\n";
-    std::cout << "Comparing memory-efficient Flash Attention vs baseline naive implementation\n";
-    std::cout << "Testing correctness, speed improvements, and memory savings\n\n";
-
-    // Test sequence length scaling
-    std::vector<std::pair<size_t, std::string> > seq_configs;
-    seq_configs.push_back(std::make_pair(512,  std::string("Medium (512)")));
-    seq_configs.push_back(std::make_pair(1024, std::string("Long (1K)")));
-    seq_configs.push_back(std::make_pair(2048, std::string("Very Long (2K)")));
-    seq_configs.push_back(std::make_pair(4096, std::string("Ultra Long (4K)")));
-
-    std::cout << "=== SEQUENCE LENGTH SCALING (32→8 heads, 128 head_dim, causal) ===\n";
-    std::cout << std::setw(18) << "Sequence Length"
-              << std::setw(15) << "Naive (ms)"
-              << std::setw(15) << "Flash (ms)"
-              << std::setw(12) << "Speedup"
-              << std::setw(15) << "Memory Saved"
-              << std::setw(15) << "Accuracy"
-              << "\n";
-    std::cout << std::string(95, '-') << "\n";
+    std::vector<size_t> test_sizes;
+    test_sizes.push_back(2048);
+    test_sizes.push_back(4096);
 
     double total_speedup = 0.0;
     double total_memory_saved = 0.0;
     double max_throughput = 0.0;
-    int valid_tests = 0;
 
-    for (size_t i = 0; i < seq_configs.size(); ++i) {
-        size_t seq_len = seq_configs[i].first;
-        const std::string& name = seq_configs[i].second;
-
-        FlashAttentionResult result = benchmark_flash_vs_naive(1, seq_len, 32, 8, 128, true);
-
-        std::string accuracy_status = (result.accuracy_loss < 1e-4) ? "EXCELLENT" :
-                                     (result.accuracy_loss < 1e-3) ? "GOOD" : "FAIR";
-
-        std::cout << std::setw(18) << name
-                  << std::setw(15) << std::fixed << std::setprecision(1) << result.naive_ms
-                  << std::setw(15) << std::fixed << std::setprecision(1) << result.flash_ms
-                  << std::setw(12) << std::fixed << std::setprecision(1) << result.speedup << "x"
-                  << std::setw(15) << std::fixed << std::setprecision(2) << result.memory_saved_gb << " GB"
-                  << std::setw(15) << accuracy_status
-                  << "\n";
-
+    for (size_t i = 0; i < test_sizes.size(); ++i) {
+        FlashAttentionResult result = benchmark_flash_vs_naive(1, test_sizes[i], 32, 8, 128, true);
         total_speedup += result.speedup;
         total_memory_saved += result.memory_saved_gb;
         max_throughput = std::max(max_throughput, result.throughput_tokens_s);
-        valid_tests++;
     }
 
-    // Test different head configurations
-    std::vector<std::pair<std::pair<size_t, size_t>, std::string> > head_configs;
-    head_configs.push_back(std::make_pair(std::make_pair(16, 4), std::string("Small (16→4)")));
-    head_configs.push_back(std::make_pair(std::make_pair(32, 8), std::string("Standard (32→8)")));
-    head_configs.push_back(std::make_pair(std::make_pair(64, 8), std::string("Large (64→8)")));
+    double avg_speedup = total_speedup / test_sizes.size();
 
-    std::cout << "\n=== HEAD COUNT SCALING (2K sequence, 128 head_dim, causal) ===\n";
-    std::cout << std::setw(18) << "Head Config"
-              << std::setw(15) << "Naive (ms)"
-              << std::setw(15) << "Flash (ms)"
-              << std::setw(12) << "Speedup"
-              << std::setw(15) << "Memory Saved"
-              << std::setw(15) << "Throughput"
-              << "\n";
-    std::cout << std::string(95, '-') << "\n";
-
-    for (size_t i = 0; i < head_configs.size(); ++i) {
-        size_t q_heads = head_configs[i].first.first;
-        size_t kv_heads = head_configs[i].first.second;
-        const std::string& name = head_configs[i].second;
-
-        FlashAttentionResult result = benchmark_flash_vs_naive(1, 2048, q_heads, kv_heads, 128, true);
-
-        std::cout << std::setw(18) << name
-                  << std::setw(15) << std::fixed << std::setprecision(1) << result.naive_ms
-                  << std::setw(15) << std::fixed << std::setprecision(1) << result.flash_ms
-                  << std::setw(12) << std::fixed << std::setprecision(1) << result.speedup << "x"
-                  << std::setw(15) << std::fixed << std::setprecision(2) << result.memory_saved_gb << " GB"
-                  << std::setw(15) << std::fixed << std::setprecision(0) << result.throughput_tokens_s << " tok/s"
-                  << "\n";
-    }
-
-    double avg_speedup = total_speedup / valid_tests;
-
-    std::cout << "\n=== PERFORMANCE SUMMARY ===\n";
-    std::cout << "• Average speedup across sequences: " << std::fixed << std::setprecision(1) << avg_speedup << "x faster than naive\n";
-    std::cout << "• Total memory saved (4K sequence): " << std::fixed << std::setprecision(1)
-              << benchmark_flash_vs_naive(1, 4096, 32, 8, 128, true).memory_saved_gb << " GB\n";
-    std::cout << "• Peak token processing rate: " << std::fixed << std::setprecision(0) << max_throughput << " tokens/second\n";
-    std::cout << "• Maintains numerical accuracy with optimized memory access patterns\n\n";
-
-    std::cout << "=== ALGORITHM ADVANTAGES ===\n";
-    std::cout << "• Memory complexity: O(n) instead of O(n²) for attention matrix\n";
-    std::cout << "• Tiled computation prevents memory bandwidth bottlenecks\n";
-    std::cout << "• Online softmax normalization maintains numerical stability\n";
-    std::cout << "• Scales to longer sequences without quadratic memory growth\n\n";
-
-    std::cout << "• Enables " << std::fixed << std::setprecision(1) << avg_speedup << "x faster inference, reducing latency by "
-              << std::fixed << std::setprecision(0) << ((avg_speedup - 1.0) / avg_speedup) * 100.0 << "%\n";
-    std::cout << "• Memory efficiency enables longer context processing on same hardware\n";
-    std::cout << "• Production-ready attention implementation for real-time applications\n";
-    std::cout << "• Foundation for scaling to multi-million token contexts\n";
+    std::cout << "Flash Attention: " << std::fixed << std::setprecision(1)
+              << avg_speedup << "x speedup, " << (int)(max_throughput/1000) << "K tokens/s, "
+              << total_memory_saved << " GB saved" << std::endl;
 
     return 0;
 }

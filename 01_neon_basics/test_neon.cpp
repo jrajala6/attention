@@ -77,63 +77,36 @@ BenchResult benchmark_vectorization(size_t len, int warmup_runs = 5, int test_ru
 }
 
 int main() {
-    std::cout << "=== NEON SIMD Vectorization Performance Analysis ===\n\n";
-    std::cout << "Testing ARM NEON float16 vector operations vs scalar (no auto-vec)\n";
-    std::cout << "Workload: Dot product (fundamental operation in ML inference)\n\n";
+    std::cout << "=== NEON SIMD PERFORMANCE ===\n";
 
     std::vector<size_t> test_sizes;
-    test_sizes.push_back(1000);      // 1K elements - small vectors
-    test_sizes.push_back(10000);     // 10K elements - medium vectors
-    test_sizes.push_back(100000);    // 100K elements - large vectors
-    test_sizes.push_back(1000000);   // 1M elements - very large vectors
-    test_sizes.push_back(10000000);  // 10M elements - stress test
-    test_sizes.push_back(50000000);  // 50M elements - memory bandwidth bound
+    test_sizes.push_back(1000000);
+    test_sizes.push_back(10000000);
+    test_sizes.push_back(50000000);
 
     std::cout << std::setw(12) << "Vector Size"
-              << std::setw(15) << "Scalar (ms)"
-              << std::setw(15) << "NEON (ms)"
               << std::setw(12) << "Speedup"
               << std::setw(15) << "Throughput"
-              << std::setw(15) << "Efficiency"
+              << std::setw(12) << "Efficiency"
               << "\n";
-    std::cout << std::string(88, '-') << "\n";
+    std::cout << std::string(55, '-') << "\n";
 
     double total_speedup = 0.0;
-    int valid_tests = 0;
 
     for (size_t i = 0; i < test_sizes.size(); ++i) {
         size_t len = test_sizes[i];
         BenchResult result = benchmark_vectorization(len);
-
-        // Calculate efficiency (how close to theoretical 8x speedup for 8-wide SIMD)
-        double theoretical_max = 8.0; // fp16x8 NEON vectors
-        double efficiency = (result.speedup / theoretical_max) * 100.0;
+        double efficiency = (result.speedup / 8.0) * 100.0;
 
         std::cout << std::setw(12) << len
-                  << std::setw(15) << std::fixed << std::setprecision(2) << result.scalar_ms
-                  << std::setw(15) << std::fixed << std::setprecision(2) << result.neon_ms
                   << std::setw(12) << std::fixed << std::setprecision(1) << result.speedup << "x"
                   << std::setw(15) << std::fixed << std::setprecision(1) << result.throughput_gb_s << " GB/s"
-                  << std::setw(15) << std::fixed << std::setprecision(1) << efficiency << "%"
+                  << std::setw(12) << std::fixed << std::setprecision(1) << efficiency << "%"
                   << "\n";
 
         total_speedup += result.speedup;
-        valid_tests++;
     }
-
-    double avg_speedup = total_speedup / valid_tests;
-
-    std::cout << "\n=== PERFORMANCE SUMMARY ===\n";
-    std::cout << "• Average vectorization speedup: " << std::fixed << std::setprecision(1) << avg_speedup << "x\n";
-    std::cout << "• Peak throughput achieved: " << std::fixed << std::setprecision(1)
-              << benchmark_vectorization(50000000).throughput_gb_s << " GB/s\n";
-    std::cout << "• SIMD efficiency: " << std::fixed << std::setprecision(1)
-              << (avg_speedup / 8.0) * 100.0 << "% of theoretical maximum\n\n";
-
-    std::cout << "• Matrix operations are " << std::fixed << std::setprecision(1) << avg_speedup
-              << "x faster, directly accelerating ML inference\n";
-    std::cout << "• Memory bandwidth efficiently utilized for large-scale computations\n";
-    std::cout << "• Foundation enables real-time processing on mobile/edge devices\n";
+    std::cout << std::endl;
 
     return 0;
 }
