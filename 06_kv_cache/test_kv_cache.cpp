@@ -141,7 +141,7 @@ bool test_input_validation() {
     int8_cache.init(2, 32, 4, 64, CachePrecision::INT8);
 
     try {
-        int8_cache.append(0, keys.data(), values.data(), 1);
+        int8_cache.get_keys_fp16(0, keys.data());
         std::cout << "❌ Should have thrown for type mismatch" << std::endl;
         return false;
     } catch (const std::runtime_error& e) {
