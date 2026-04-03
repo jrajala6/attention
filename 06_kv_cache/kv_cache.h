@@ -17,13 +17,22 @@ struct KVCache {
     size_t max_seq_len;
     size_t current_seq_len = 0;
     size_t total_seq_len = 0;
+    size_t quant_group_size = 0;  
     CachePrecision precision;
+
+    size_t num_quant_groups() const {
+        size_t gs = (quant_group_size == 0) ? head_dim : quant_group_size;
+        return (head_dim + gs - 1) / gs;
+    }
+    size_t scale_index(size_t token, size_t head) const {
+        return (token * num_kv_heads + head) * num_quant_groups();
+    }
 
     size_t window_size = 1024;
     size_t sink_size = 4;
 
     // Core operations
-    void init(size_t layers, size_t max_seq, size_t heads, size_t dim, CachePrecision prec);
+    void init(size_t layers, size_t max_seq, size_t heads, size_t dim, CachePrecision prec, size_t group_size = 0);
     void reset();
 
     // Append FP16 KV data (for FP16 caches only)

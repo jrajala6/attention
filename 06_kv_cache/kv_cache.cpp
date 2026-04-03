@@ -6,13 +6,14 @@
 #include <cmath>
 #include "../03_quantization/quant.h"
 
-void KVCache::init(size_t layers, size_t max_seq, size_t heads, size_t dim, CachePrecision prec) {
+void KVCache::init(size_t layers, size_t max_seq, size_t heads, size_t dim, CachePrecision prec, size_t group_size) {
     this->layers.resize(layers);
     this->num_layers = layers;
     this->max_seq_len = max_seq;
     this->num_kv_heads = heads;
     this->head_dim = dim;
     this->precision = prec;
+    this->quant_group_size = group_size;  
 
     size_t bytes_per_element = (prec == CachePrecision::FP16) ? sizeof(__fp16) : sizeof(int8_t);
     size_t total_bytes = max_seq * heads * dim * bytes_per_element;
@@ -22,8 +23,9 @@ void KVCache::init(size_t layers, size_t max_seq, size_t heads, size_t dim, Cach
         layer.values.resize(total_bytes);
 
         if (prec == CachePrecision::INT8) {
-            layer.key_scales.resize(max_seq);
-            layer.value_scales.resize(max_seq);
+            size_t total_scales = max_seq * heads * this->num_quant_groups();
+            layer.key_scales.resize(total_scales, 0.0f);
+            layer.value_scales.resize(total_scales, 0.0f);
         }
     }
 }
@@ -65,32 +67,32 @@ void KVCache::append(size_t layer, const __fp16* new_keys, const __fp16* new_val
     } else {
         int8_t* keys_data = (int8_t*)this->layers[layer].keys.data();
         int8_t* values_data = (int8_t*)this->layers[layer].values.data();
+        size_t gs = (this->quant_group_size == 0) ? this->head_dim : this->quant_group_size;
 
         for (size_t head = 0; head < this->num_kv_heads; ++head) {
             size_t src_offset = head * num_new_tokens * this->head_dim;
             size_t head_base = head * this->max_seq_len * this->head_dim;
             size_t dst_offset = head_base + this->current_seq_len * this->head_dim;
 
-            // Use proper grouped quantization with group_size = head_dim (one scale per token)
             size_t total_elements = num_new_tokens * this->head_dim;
-            size_t group_size = this->head_dim;
 
-            // Quantize keys using your quantization functions
+            size_t k_scale_offset = this->scale_index(this->current_seq_len, head);
+            size_t v_scale_offset = this->scale_index(this->current_seq_len, head);
+
             quantize_fp16_to_int8_grouped(
                 new_keys + src_offset,
                 keys_data + dst_offset,
-                &this->layers[layer].key_scales[this->current_seq_len],
+                &this->layers[layer].key_scales[k_scale_offset],
                 total_elements,
-                group_size
+                gs
             );
 
-            // Quantize values using your quantization functions
             quantize_fp16_to_int8_grouped(
                 new_values + src_offset,
                 values_data + dst_offset,
-                &this->layers[layer].value_scales[this->current_seq_len],
+                &this->layers[layer].value_scales[v_scale_offset],
                 total_elements,
-                group_size
+                gs
             );
         }
     }
@@ -126,6 +128,8 @@ void KVCache::append_int8(size_t layer, const int8_t* new_keys, const int8_t* ne
 
     int8_t* keys_data = (int8_t*)this->layers[layer].keys.data();
     int8_t* values_data = (int8_t*)this->layers[layer].values.data();
+    size_t nqg = this->num_quant_groups();
+    size_t scales_per_token = this->num_kv_heads * nqg;
 
     for (size_t head = 0; head < this->num_kv_heads; ++head) {
         size_t src_offset = head * num_new_tokens * this->head_dim;
@@ -137,8 +141,9 @@ void KVCache::append_int8(size_t layer, const int8_t* new_keys, const int8_t* ne
         memcpy(values_data + dst_offset, new_values + src_offset, num_new_tokens * this->head_dim);
     }
 
-    memcpy(this->layers[layer].key_scales.data() + this->current_seq_len, key_scales, num_new_tokens * sizeof(float));
-    memcpy(this->layers[layer].value_scales.data() + this->current_seq_len, value_scales, num_new_tokens * sizeof(float));
+    size_t dst_scale_start = this->scale_index(this->current_seq_len, 0);
+    memcpy(this->layers[layer].key_scales.data() + dst_scale_start, key_scales, num_new_tokens * scales_per_token * sizeof(float));
+    memcpy(this->layers[layer].value_scales.data() + dst_scale_start, value_scales, num_new_tokens * scales_per_token * sizeof(float));
 
     if (layer == this->num_layers - 1) {
         this->current_seq_len += num_new_tokens;
@@ -169,8 +174,12 @@ void KVCache::evict_if_needed(size_t additional_tokens) {
             
         } 
         if (this->precision == CachePrecision::INT8) {
-            std::memmove(this->layers[layer].key_scales.data() + this->sink_size, this->layers[layer].key_scales.data() + offset_position, tokens_to_copy * sizeof(float));
-            std::memmove(this->layers[layer].value_scales.data() + this->sink_size, this->layers[layer].value_scales.data() + offset_position, tokens_to_copy * sizeof(float));
+            size_t scales_per_token = this->num_kv_heads * this->num_quant_groups();
+            size_t src_scale = this->scale_index(offset_position, 0);
+            size_t dst_scale = this->scale_index(this->sink_size, 0);
+            size_t scale_bytes = tokens_to_copy * scales_per_token * sizeof(float);
+            std::memmove(this->layers[layer].key_scales.data() + dst_scale, this->layers[layer].key_scales.data() + src_scale, scale_bytes);
+            std::memmove(this->layers[layer].value_scales.data() + dst_scale, this->layers[layer].value_scales.data() + src_scale, scale_bytes);
         }                                                           
     }
 

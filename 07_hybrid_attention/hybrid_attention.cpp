@@ -15,10 +15,12 @@ void hybrid_attention_f16(const __fp16* Q, const int8_t* K_cached, const int8_t*
     const size_t BLOCK_SIZE = 128;
     size_t qkv_ratio = num_q_heads / num_kv_heads;
     size_t total_work = batch_size * num_q_heads * seq_len;
+    size_t num_quant_groups = (head_dim + quant_group_size - 1) / quant_group_size;
 
     parallel_for(total_work, 1, [&](size_t idx) {
-        float O_temp[head_dim];
-        float block_scores[BLOCK_SIZE];
+        std::vector<float> O_temp(head_dim, 0.0f);
+        std::vector<float> block_scores(BLOCK_SIZE);
+
         size_t q_idx = idx % seq_len;
         size_t q_head = (idx / seq_len) % num_q_heads;
         size_t b = (idx / (seq_len * num_q_heads)) % batch_size;
@@ -27,14 +29,13 @@ void hybrid_attention_f16(const __fp16* Q, const int8_t* K_cached, const int8_t*
         float running_max = -FLT_MAX;
         float running_sum = 0.0f;
 
-        for (size_t i = 0; i < head_dim; ++i)
-            O_temp[i] = 0;
-
         size_t kv_seq_len = cache_len + new_len;
-        size_t end_idx = is_causal ? std::min(q_idx + 1, kv_seq_len) : kv_seq_len;
+
+        size_t absolute_q_pos = position_offset + q_idx;
+        size_t end_idx = is_causal ? std::min(absolute_q_pos + 1, kv_seq_len) : kv_seq_len;
         size_t start_idx = 0;
-        if (window_size > 0 && q_idx > window_size) {
-            start_idx = q_idx - window_size;
+        if (window_size > 0 && absolute_q_pos > window_size) {
+            start_idx = absolute_q_pos - window_size;
         }
 
         size_t q_offset = b * num_q_heads * seq_len * head_dim + q_head * seq_len * head_dim + q_idx * head_dim;
@@ -48,8 +49,8 @@ void hybrid_attention_f16(const __fp16* Q, const int8_t* K_cached, const int8_t*
                if (kv_idx < cache_len){
                     size_t cache_offset = kv_head * cache_len * head_dim + kv_idx * head_dim;
                     
-                    size_t scale_idx = kv_idx / quant_group_size;
-                    float k_scale = k_scales[scale_idx];
+                    size_t scale_base = (kv_idx * num_kv_heads + kv_head) * num_quant_groups;
+                    float k_scale = k_scales[scale_base];
                     float score = dot_product_int8_fp16_dequant(K_cached + cache_offset, Q + q_offset, k_scale, head_dim);
                     score *= scale;
                     block_scores[kv_idx - block_start] = score;
@@ -87,20 +88,19 @@ void hybrid_attention_f16(const __fp16* Q, const int8_t* K_cached, const int8_t*
                 float32x4_t shifted = vsubq_f32(curr, vdupq_n_f32(running_max));
                 float32x4_t scores = fast_exp_f32x4(shifted);
                 running_sum += vaddvq_f32(scores);
-                // Store NEON vector to array for clean loop iteration
                 float score_vals[4];
                 vst1q_f32(score_vals, scores);
 
                 for (int i = 0; i < 4 && kv_idx + i < block_end; ++i) {
                     if (kv_idx + i < cache_len) {
                         size_t cache_offset = kv_head * cache_len * head_dim + (kv_idx + i) * head_dim;
-                        size_t scale_idx = (kv_idx + i) / quant_group_size;
-                        float v_scale = v_scales[scale_idx];
-                        weighted_accumulate_int8_fp16_dequant(V_cached + cache_offset, v_scale, O_temp, score_vals[i], head_dim);
+                        size_t scale_base = ((kv_idx + i) * num_kv_heads + kv_head) * num_quant_groups;
+                        float v_scale = v_scales[scale_base];
+                        weighted_accumulate_int8_fp16_dequant(V_cached + cache_offset, v_scale, O_temp.data(), score_vals[i], head_dim);
                     } else if (kv_idx + i < cache_len + new_len) {
                         size_t new_token_idx = (kv_idx + i) - cache_len;
                         size_t v_offset = b * num_kv_heads * new_len * head_dim + kv_head * new_len * head_dim + new_token_idx * head_dim;
-                        weighted_accumulate(O_temp, V_new + v_offset, score_vals[i], head_dim);
+                        weighted_accumulate(O_temp.data(), V_new + v_offset, score_vals[i], head_dim);
                     }
                 }
             }
@@ -113,19 +113,25 @@ void hybrid_attention_f16(const __fp16* Q, const int8_t* K_cached, const int8_t*
 
                 if (kv_idx < cache_len) {
                     size_t cache_offset = kv_head * cache_len * head_dim + kv_idx * head_dim;
-                    size_t scale_idx = kv_idx / quant_group_size;
-                    float v_scale = v_scales[scale_idx];
-                    weighted_accumulate_int8_fp16_dequant(V_cached + cache_offset, v_scale, O_temp, score, head_dim);
+                    size_t scale_base = (kv_idx * num_kv_heads + kv_head) * num_quant_groups;
+                    float v_scale = v_scales[scale_base];
+                    weighted_accumulate_int8_fp16_dequant(V_cached + cache_offset, v_scale, O_temp.data(), score, head_dim);
                 } else if (kv_idx < cache_len + new_len) {
                     size_t new_token_idx = kv_idx - cache_len;
                     size_t v_offset = b * num_kv_heads * new_len * head_dim + kv_head * new_len * head_dim + new_token_idx * head_dim;
-                    weighted_accumulate(O_temp, V_new + v_offset, score, head_dim);
+                    weighted_accumulate(O_temp.data(), V_new + v_offset, score, head_dim);
                 }
             }
         }
 
         size_t out_offset = b * num_q_heads * seq_len * head_dim + q_head * seq_len * head_dim + q_idx * head_dim;
-        for (size_t i = 0; i < head_dim; ++i) 
-            O[out_offset + i] = (__fp16)(O_temp[i] / running_sum);
+        if (running_sum > 0.0f) {
+            float inv_sum = 1.0f / running_sum;
+            for (size_t i = 0; i < head_dim; ++i)
+                O[out_offset + i] = (__fp16)(O_temp[i] * inv_sum);
+        } else {
+            for (size_t i = 0; i < head_dim; ++i)
+                O[out_offset + i] = (__fp16)0.0f;
+        }
     });
 }
