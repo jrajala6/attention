@@ -2,6 +2,37 @@
 
 A standalone C++ project implementing every core component of an LLM inference engine from scratch to deeply understand how attention, caching, quantization, and SIMD optimization work together. Built entirely without external dependencies.
 
+## Requirements
+
+- Apple Silicon Mac (M1/M2/M3) or ARM64 Linux with NEON support
+- `clang++` with C++11 support
+- `make`
+
+## Build & Run
+
+```bash
+# Build and run all tests
+make all
+
+# Build individual components
+make neon          # NEON SIMD tests
+make threading     # Thread pool tests
+make quant         # Quantization tests
+make naive         # Naive attention tests
+make flash         # Flash attention tests
+make kv-cache      # KV cache tests
+make hybrid        # Hybrid attention tests
+
+# Run hybrid attention benchmark (correctness + performance)
+make hybrid-bench
+
+# Build with debug symbols
+make DEBUG=1 all
+
+# Clean build artifacts
+make clean
+```
+
 ## Core Components
 
 | Component | Description |
@@ -34,7 +65,8 @@ The project explores three increasingly sophisticated attention implementations:
 
 1. **Naive Attention**: Standard O(n²) algorithm materializing full attention matrix
 2. **FlashAttention 1D**: Row-wise blocking with online softmax to avoid quadratic memory
-3. **FlashAttention 2D**: Advanced tiling where both query and key-value dimensions are blocked for optimal cache reuse
+3. **FlashAttention 2D**: Advanced tiling where both query and key-value dimensions are blocked for optimal cache reuse (Coming soon)
+4. **Hybrid Attention**: INT8 cached KV with FP16 new tokens, per-head grouped quantization scales, and online softmax — the production decode path
 
 Each approach demonstrates different memory-compute trade-offs fundamental to modern inference engines.
 
