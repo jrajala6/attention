@@ -106,6 +106,7 @@ run-benchmarks: build-tests
 	@./test_flash_comparison
 	@./test_kv_cache
 	@./test_hybrid
+	@./benchmark_hybrid
 
 # Individual: run specific optimization tests
 .PHONY: neon threading quant naive flash flash-compare flash-simple
