@@ -91,7 +91,7 @@ bool test_correctness_vs_naive() {
 
     // Create and populate cache
     KVCache cache;
-    cache.init(1, cache_len + 10, num_kv_heads, head_dim, CachePrecision::INT8);  // Extra space
+    cache.init(1, cache_len + 10, num_kv_heads, head_dim, CachePrecision::INT8, quant_group_size);
 
     // Add cached tokens (first cache_len tokens)
     for (size_t t = 0; t < cache_len; ++t) {
@@ -219,7 +219,7 @@ bool test_multiple_configs() {
 
             // Create minimal cache
             KVCache cache;
-            cache.init(1, config.cache_len + 5, config.num_kv_heads, config.head_dim, CachePrecision::INT8);
+            cache.init(1, config.cache_len + 5, config.num_kv_heads, config.head_dim, CachePrecision::INT8, 8);
 
             for (size_t t = 0; t < config.cache_len; ++t) {
                 std::vector<__fp16> k_token = generate_test_fp16(config.num_kv_heads * config.head_dim);
@@ -297,7 +297,7 @@ void benchmark_performance() {
 
     // Setup cache
     KVCache cache;
-    cache.init(1, cache_len + 10, num_kv_heads, head_dim, CachePrecision::INT8);
+    cache.init(1, cache_len + 10, num_kv_heads, head_dim, CachePrecision::INT8, 8);
 
     for (size_t t = 0; t < cache_len; ++t) {
         std::vector<__fp16> k_token(num_kv_heads * head_dim);

@@ -66,7 +66,7 @@ void test_basic_compilation() {
     try {
         // Create and populate KV cache
         KVCache cache;
-        cache.init(1, cache_len, num_kv_heads, head_dim, CachePrecision::INT8);
+        cache.init(1, cache_len, num_kv_heads, head_dim, CachePrecision::INT8, quant_group_size);
 
         // Generate and add cached tokens (simulate past tokens)
         for (size_t t = 0; t < cache_len; ++t) {

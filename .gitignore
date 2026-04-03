@@ -8,6 +8,10 @@ test_naive_attention
 test_flash_attention
 test_flash_simple
 test_flash_comparison
+test_kv_cache
+test_hybrid
+debug_hybrid
+benchmark_hybrid
 
 # Object files
 *.o

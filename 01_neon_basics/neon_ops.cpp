@@ -162,3 +162,26 @@ void weighted_accumulate_int8_fp16_dequant(const int8_t* a_int8, float scale, fl
     for (size_t i = (len / 8) * 8; i < len; ++i)
         O_temp[i] += scale * (float)a_int8[i] * attention_score;
 }
+
+float dot_product_int8_fp16_dequant_grouped(const int8_t* a_int8, const __fp16* b_fp16,
+                                            const float* scales, size_t group_size, size_t len) {
+    float result = 0.0f;
+    size_t num_groups = (len + group_size - 1) / group_size;
+    for (size_t g = 0; g < num_groups; ++g) {
+        size_t offset = g * group_size;
+        size_t glen = (offset + group_size <= len) ? group_size : (len - offset);
+        result += dot_product_int8_fp16_dequant(a_int8 + offset, b_fp16 + offset, scales[g], glen);
+    }
+    return result;
+}
+
+void weighted_accumulate_int8_fp16_dequant_grouped(const int8_t* a_int8, const float* scales,
+                                                   float* O_temp, float attention_score,
+                                                   size_t group_size, size_t len) {
+    size_t num_groups = (len + group_size - 1) / group_size;
+    for (size_t g = 0; g < num_groups; ++g) {
+        size_t offset = g * group_size;
+        size_t glen = (offset + group_size <= len) ? group_size : (len - offset);
+        weighted_accumulate_int8_fp16_dequant(a_int8 + offset, scales[g], O_temp + offset, attention_score, glen);
+    }
+}

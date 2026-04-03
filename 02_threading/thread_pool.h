@@ -63,6 +63,28 @@ void parallel_for(size_t total_work, size_t min_work_per_thread, F work_func) {
         f.get();
 }
 
+template<typename F>
+void parallel_for_range(size_t total_work, size_t min_work_per_thread, F work_func) {
+    size_t max_chunks = std::max((size_t)1, total_work / min_work_per_thread);
+    size_t num_chunks = std::min(max_chunks, pool.num_workers());
+
+    std::vector<std::future<void>> futures;
+    futures.reserve(num_chunks);
+
+    for (size_t chunk = 0; chunk < num_chunks; ++chunk)
+    {
+        size_t range_per_chunk = total_work / num_chunks;
+        size_t start = chunk * range_per_chunk;
+        size_t end = (chunk == num_chunks - 1) ? total_work : start + range_per_chunk;
+        futures.push_back(pool.enqueue([start, end, work_func] () {
+            work_func(start, end);
+        }));
+    }
+
+    for (auto& f: futures)
+        f.get();
+}
+
 // Reduce pattern — each thread produces a partial result, then combine
 template<typename F, typename T, typename Combine>
 T parallel_reduce(size_t total_work, F work_func, T init, Combine combine) {

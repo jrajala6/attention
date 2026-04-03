@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <stdexcept>
 #include <cmath>
-#include "../03_quantization/quant.h"
 
 void KVCache::init(size_t layers, size_t max_seq, size_t heads, size_t dim, CachePrecision prec, size_t group_size) {
     this->layers.resize(layers);
@@ -50,6 +49,10 @@ void KVCache::append(size_t layer, const __fp16* new_keys, const __fp16* new_val
         this->evict_if_needed(num_new_tokens);
     }
 
+    if (this->current_seq_len + num_new_tokens > this->max_seq_len) {
+        throw std::overflow_error("Cache overflow: current_seq_len + num_new_tokens > max_seq_len");
+    }
+
     if (this->precision == CachePrecision::FP16) {
         __fp16* keys_data = (__fp16*)this->layers[layer].keys.data();
         __fp16* values_data = (__fp16*)this->layers[layer].values.data();
@@ -70,30 +73,27 @@ void KVCache::append(size_t layer, const __fp16* new_keys, const __fp16* new_val
         size_t gs = (this->quant_group_size == 0) ? this->head_dim : this->quant_group_size;
 
         for (size_t head = 0; head < this->num_kv_heads; ++head) {
-            size_t src_offset = head * num_new_tokens * this->head_dim;
-            size_t head_base = head * this->max_seq_len * this->head_dim;
-            size_t dst_offset = head_base + this->current_seq_len * this->head_dim;
+            for (size_t t = 0; t < num_new_tokens; ++t) {
+                size_t src_off = head * num_new_tokens * this->head_dim + t * this->head_dim;
+                size_t dst_off = head * this->max_seq_len * this->head_dim + (this->current_seq_len + t) * this->head_dim;
+                size_t scale_off = this->scale_index(this->current_seq_len + t, head);
 
-            size_t total_elements = num_new_tokens * this->head_dim;
+                quantize_fp16_to_int8_grouped(
+                    new_keys + src_off,
+                    keys_data + dst_off,
+                    &this->layers[layer].key_scales[scale_off],
+                    this->head_dim,
+                    gs
+                );
 
-            size_t k_scale_offset = this->scale_index(this->current_seq_len, head);
-            size_t v_scale_offset = this->scale_index(this->current_seq_len, head);
-
-            quantize_fp16_to_int8_grouped(
-                new_keys + src_offset,
-                keys_data + dst_offset,
-                &this->layers[layer].key_scales[k_scale_offset],
-                total_elements,
-                gs
-            );
-
-            quantize_fp16_to_int8_grouped(
-                new_values + src_offset,
-                values_data + dst_offset,
-                &this->layers[layer].value_scales[v_scale_offset],
-                total_elements,
-                gs
-            );
+                quantize_fp16_to_int8_grouped(
+                    new_values + src_off,
+                    values_data + dst_off,
+                    &this->layers[layer].value_scales[scale_off],
+                    this->head_dim,
+                    gs
+                );
+            }
         }
     }
 
