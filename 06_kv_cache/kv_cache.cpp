@@ -1,7 +1,10 @@
 #include "kv_cache.h"
+#include "../03_quantization/quant.h"
 #include <cstring>
 #include <algorithm>
 #include <stdexcept>
+#include <cmath>
+#include "../03_quantization/quant.h"
 
 void KVCache::init(size_t layers, size_t max_seq, size_t heads, size_t dim, CachePrecision prec) {
     this->layers.resize(layers);
@@ -45,22 +48,53 @@ void KVCache::append(size_t layer, const __fp16* new_keys, const __fp16* new_val
         this->evict_if_needed(num_new_tokens);
     }
 
-    if (this->precision != CachePrecision::FP16) {
-        throw std::runtime_error("Use append_int8() for INT8 caches");
+    if (this->precision == CachePrecision::FP16) {
+        __fp16* keys_data = (__fp16*)this->layers[layer].keys.data();
+        __fp16* values_data = (__fp16*)this->layers[layer].values.data();
+
+        for (size_t head = 0; head < this->num_kv_heads; ++head) {
+            size_t src_offset = head * num_new_tokens * this->head_dim;
+            size_t head_base = head * this->max_seq_len * this->head_dim;
+            size_t dst_offset = head_base + this->current_seq_len * this->head_dim;
+
+            memcpy(keys_data + dst_offset, new_keys + src_offset,
+                   num_new_tokens * this->head_dim * sizeof(__fp16));
+            memcpy(values_data + dst_offset, new_values + src_offset,
+                   num_new_tokens * this->head_dim * sizeof(__fp16));
+        }
+    } else {
+        int8_t* keys_data = (int8_t*)this->layers[layer].keys.data();
+        int8_t* values_data = (int8_t*)this->layers[layer].values.data();
+
+        for (size_t head = 0; head < this->num_kv_heads; ++head) {
+            size_t src_offset = head * num_new_tokens * this->head_dim;
+            size_t head_base = head * this->max_seq_len * this->head_dim;
+            size_t dst_offset = head_base + this->current_seq_len * this->head_dim;
+
+            // Use proper grouped quantization with group_size = head_dim (one scale per token)
+            size_t total_elements = num_new_tokens * this->head_dim;
+            size_t group_size = this->head_dim;
+
+            // Quantize keys using your quantization functions
+            quantize_fp16_to_int8_grouped(
+                new_keys + src_offset,
+                keys_data + dst_offset,
+                &this->layers[layer].key_scales[this->current_seq_len],
+                total_elements,
+                group_size
+            );
+
+            // Quantize values using your quantization functions
+            quantize_fp16_to_int8_grouped(
+                new_values + src_offset,
+                values_data + dst_offset,
+                &this->layers[layer].value_scales[this->current_seq_len],
+                total_elements,
+                group_size
+            );
+        }
     }
 
-    __fp16* keys_data = (__fp16*)this->layers[layer].keys.data();
-    __fp16* values_data = (__fp16*)this->layers[layer].values.data();
-
-    for (size_t head = 0; head < this->num_kv_heads; ++head) {
-        size_t src_offset = head * num_new_tokens * this->head_dim;
-
-        size_t head_base = head * this->max_seq_len * this->head_dim;
-        size_t dst_offset = head_base + this->current_seq_len * this->head_dim;
-
-        memcpy(keys_data + dst_offset, new_keys + src_offset, num_new_tokens * this->head_dim * sizeof(__fp16));
-        memcpy(values_data + dst_offset, new_values + src_offset, num_new_tokens * this->head_dim * sizeof(__fp16));
-    }
 
     if (layer == this->num_layers - 1) {
         this->current_seq_len += num_new_tokens;
@@ -242,4 +276,24 @@ void KVCache::set_window(size_t window, size_t sinks) {
     }
     this->window_size = window;
     this->sink_size = sinks;
+}
+
+const int8_t* KVCache::get_keys_direct(size_t layer) const {
+    if (layer >= this->num_layers) {
+        throw std::invalid_argument("Invalid layer index");
+    }
+    if (this->precision != CachePrecision::INT8) {
+        throw std::runtime_error("Direct access only available for INT8 caches");
+    }
+    return (const int8_t*)this->layers[layer].keys.data();
+}
+
+const int8_t* KVCache::get_values_direct(size_t layer) const {
+    if (layer >= this->num_layers) {
+        throw std::invalid_argument("Invalid layer index");
+    }
+    if (this->precision != CachePrecision::INT8) {
+        throw std::runtime_error("Direct access only available for INT8 caches");
+    }
+    return (const int8_t*)this->layers[layer].values.data();
 }

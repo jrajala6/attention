@@ -26,7 +26,7 @@ void flash_attention_f16(const __fp16* Q, const __fp16* K, const __fp16* V, __fp
         for (size_t i = 0; i < head_dim; ++i)
             O_temp[i] = 0;
 
-        size_t end_idx = is_causal ? (q_idx + 1) : kv_seq_len;
+        size_t end_idx = is_causal ? std::min(q_idx + 1, kv_seq_len) : kv_seq_len;
         size_t start_idx = 0;
         if (window_size > 0 && q_idx > window_size) {
             start_idx = q_idx - window_size;

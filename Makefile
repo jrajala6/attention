@@ -40,10 +40,10 @@ QUANT_OBJS = $(QUANT_DIR)/quant.o $(THREAD_OBJS)
 NAIVE_OBJS = $(NAIVE_DIR)/naive_attention.o $(NEON_OBJS) $(THREAD_OBJS)
 FLASH_OBJS = $(FLASH_DIR)/flash_attention.o $(NAIVE_OBJS)
 FLASH_SIMPLE_OBJS = $(FLASH_DIR)/flash_attention_simple.o $(SIMPLE_OBJS) $(THREAD_OBJS)
-KV_CACHE_OBJS = $(KV_CACHE_DIR)/kv_cache.o $(NEON_OBJS)
+KV_CACHE_OBJS = $(KV_CACHE_DIR)/kv_cache.o $(NEON_OBJS) $(QUANT_OBJS)
 HYBRID_OBJS = $(HYBRID_DIR)/hybrid_attention.o $(NEON_OBJS) $(THREAD_OBJS) $(KV_CACHE_OBJS)
 
-TESTS = test_neon test_threading test_quantization test_naive_attention test_flash_attention test_flash_simple test_flash_comparison test_kv_cache test_hybrid
+TESTS = test_neon test_threading test_quantization test_naive_attention test_flash_attention test_flash_simple test_flash_comparison test_kv_cache test_hybrid benchmark_hybrid
 
 # Main: build all tests, run benchmarks, show results
 .PHONY: all clean
@@ -80,6 +80,12 @@ test_kv_cache: $(KV_CACHE_DIR)/test_kv_cache.o $(KV_CACHE_OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
 test_hybrid: $(HYBRID_DIR)/test_hybrid.o $(HYBRID_OBJS)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+
+benchmark_hybrid: $(HYBRID_DIR)/benchmark_hybrid.o $(HYBRID_OBJS) $(FLASH_OBJS)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+
+debug_hybrid: $(HYBRID_DIR)/debug_hybrid.o $(HYBRID_OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
 %.o: %.cpp
@@ -129,6 +135,9 @@ kv-cache: test_kv_cache
 
 hybrid: test_hybrid
 	@./test_hybrid
+
+hybrid-bench: benchmark_hybrid
+	@./benchmark_hybrid
 
 .PHONY: banner summary
 banner:

@@ -27,7 +27,7 @@ void naive_attention(const __fp16* Q, const __fp16* K, const __fp16* V, __fp16* 
                 size_t end_idx = kv_seq_len;
 
                 if (is_causal)
-                    end_idx = q_idx + 1;
+                    end_idx = std::min(q_idx + 1, kv_seq_len);
 
                 size_t start_idx = 0;
                 if (window_size > 0 && q_idx > window_size) {

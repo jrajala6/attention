@@ -47,6 +47,10 @@ struct KVCache {
     const float* get_key_scales(size_t layer) const;
     const float* get_value_scales(size_t layer) const;
 
+    // Zero-copy direct access for performance (inference only)
+    const int8_t* get_keys_direct(size_t layer) const;
+    const int8_t* get_values_direct(size_t layer) const;
+
     void set_window(size_t window, size_t sinks);
     size_t effective_len() const { return current_seq_len; }
 };
