@@ -30,6 +30,8 @@ THREAD_DIR = 02_threading
 QUANT_DIR = 03_quantization
 NAIVE_DIR = 04_naive_attention
 FLASH_DIR = 05_flash_attention
+KV_CACHE_DIR = 06_kv_cache
+HYBRID_DIR = 07_hybrid_attention
 
 NEON_OBJS = $(NEON_DIR)/neon_ops.o
 SIMPLE_OBJS = $(NEON_DIR)/simple_ops.o
@@ -38,8 +40,10 @@ QUANT_OBJS = $(QUANT_DIR)/quant.o $(THREAD_OBJS)
 NAIVE_OBJS = $(NAIVE_DIR)/naive_attention.o $(NEON_OBJS) $(THREAD_OBJS)
 FLASH_OBJS = $(FLASH_DIR)/flash_attention.o $(NAIVE_OBJS)
 FLASH_SIMPLE_OBJS = $(FLASH_DIR)/flash_attention_simple.o $(SIMPLE_OBJS) $(THREAD_OBJS)
+KV_CACHE_OBJS = $(KV_CACHE_DIR)/kv_cache.o $(NEON_OBJS)
+HYBRID_OBJS = $(HYBRID_DIR)/hybrid_attention.o $(NEON_OBJS) $(THREAD_OBJS) $(KV_CACHE_OBJS)
 
-TESTS = test_neon test_threading test_quantization test_naive_attention test_flash_attention test_flash_simple test_flash_comparison
+TESTS = test_neon test_threading test_quantization test_naive_attention test_flash_attention test_flash_simple test_flash_comparison test_kv_cache test_hybrid
 
 # Main: build all tests, run benchmarks, show results
 .PHONY: all clean
@@ -72,6 +76,12 @@ test_flash_simple: $(FLASH_DIR)/test_flash_simple.o $(FLASH_SIMPLE_OBJS)
 test_flash_comparison: $(FLASH_DIR)/test_flash_comparison.o $(FLASH_OBJS) $(FLASH_SIMPLE_OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
+test_kv_cache: $(KV_CACHE_DIR)/test_kv_cache.o $(KV_CACHE_OBJS)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+
+test_hybrid: $(HYBRID_DIR)/test_hybrid.o $(HYBRID_OBJS)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
@@ -88,6 +98,8 @@ run-benchmarks: build-tests
 	@./test_flash_attention
 	@./test_flash_simple
 	@./test_flash_comparison
+	@./test_kv_cache
+	@./test_hybrid
 
 # Individual: run specific optimization tests
 .PHONY: neon threading quant naive flash flash-compare flash-simple
@@ -111,6 +123,12 @@ flash-compare: test_flash_comparison
 
 flash-simple: test_flash_simple
 	@./test_flash_simple
+
+kv-cache: test_kv_cache
+	@./test_kv_cache
+
+hybrid: test_hybrid
+	@./test_hybrid
 
 .PHONY: banner summary
 banner:

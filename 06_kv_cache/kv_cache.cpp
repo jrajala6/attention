@@ -49,13 +49,18 @@ void KVCache::append(size_t layer, const __fp16* new_keys, const __fp16* new_val
         throw std::runtime_error("Use append_int8() for INT8 caches");
     }
 
-    size_t bytes_per_element = sizeof(__fp16);
-    size_t bytes_per_token = this->head_dim * bytes_per_element;
-    size_t total_bytes = num_new_tokens * this->num_kv_heads * bytes_per_token;
-    size_t offset = this->current_seq_len * this->num_kv_heads * bytes_per_token;
+    __fp16* keys_data = (__fp16*)this->layers[layer].keys.data();
+    __fp16* values_data = (__fp16*)this->layers[layer].values.data();
 
-    std::memcpy(this->layers[layer].keys.data() + offset, new_keys, total_bytes);
-    std::memcpy(this->layers[layer].values.data() + offset, new_values, total_bytes);
+    for (size_t head = 0; head < this->num_kv_heads; ++head) {
+        size_t src_offset = head * num_new_tokens * this->head_dim;
+
+        size_t head_base = head * this->max_seq_len * this->head_dim;
+        size_t dst_offset = head_base + this->current_seq_len * this->head_dim;
+
+        memcpy(keys_data + dst_offset, new_keys + src_offset, num_new_tokens * this->head_dim * sizeof(__fp16));
+        memcpy(values_data + dst_offset, new_values + src_offset, num_new_tokens * this->head_dim * sizeof(__fp16));
+    }
 
     if (layer == this->num_layers - 1) {
         this->current_seq_len += num_new_tokens;
@@ -85,18 +90,21 @@ void KVCache::append_int8(size_t layer, const int8_t* new_keys, const int8_t* ne
         this->evict_if_needed(num_new_tokens);
     }
 
-    size_t bytes_per_element = sizeof(int8_t);
-    size_t bytes_per_token = this->head_dim * bytes_per_element;
-    size_t total_bytes = num_new_tokens * this->num_kv_heads * bytes_per_token;
-    size_t offset = this->current_seq_len * this->num_kv_heads * bytes_per_token;
+    int8_t* keys_data = (int8_t*)this->layers[layer].keys.data();
+    int8_t* values_data = (int8_t*)this->layers[layer].values.data();
 
-    std::memcpy(this->layers[layer].keys.data() + offset, new_keys, total_bytes);
-    std::memcpy(this->layers[layer].values.data() + offset, new_values, total_bytes);
+    for (size_t head = 0; head < this->num_kv_heads; ++head) {
+        size_t src_offset = head * num_new_tokens * this->head_dim;
 
-    std::memcpy(this->layers[layer].key_scales.data() + this->current_seq_len,
-                key_scales, num_new_tokens * sizeof(float));
-    std::memcpy(this->layers[layer].value_scales.data() + this->current_seq_len,
-                value_scales, num_new_tokens * sizeof(float));
+        size_t head_base = head * this->max_seq_len * this->head_dim;
+        size_t dst_offset = head_base + this->current_seq_len * this->head_dim;
+
+        memcpy(keys_data + dst_offset, new_keys + src_offset, num_new_tokens * this->head_dim);
+        memcpy(values_data + dst_offset, new_values + src_offset, num_new_tokens * this->head_dim);
+    }
+
+    memcpy(this->layers[layer].key_scales.data() + this->current_seq_len, key_scales, num_new_tokens * sizeof(float));
+    memcpy(this->layers[layer].value_scales.data() + this->current_seq_len, value_scales, num_new_tokens * sizeof(float));
 
     if (layer == this->num_layers - 1) {
         this->current_seq_len += num_new_tokens;
@@ -108,26 +116,30 @@ void KVCache::evict_if_needed(size_t additional_tokens) {
     size_t future_seq_len = this->current_seq_len + additional_tokens;                                                                         
     if (future_seq_len <= this->window_size) return;
                                                                                                                                                 
-    size_t bytes_per_element = (this->precision == CachePrecision::FP16) ? sizeof(__fp16) : sizeof(int8_t);
-    size_t bytes_per_token = this->num_kv_heads * this->head_dim * bytes_per_element;                                                          
-                                                                                                                                                
+    size_t bytes_per_element = (this->precision == CachePrecision::FP16) ? sizeof(__fp16) : sizeof(int8_t);                                                                                                                                                
     size_t keep = this->window_size - this->sink_size;
                                                                                                                                                 
     size_t offset_position = future_seq_len - keep;
-    size_t offset = offset_position * bytes_per_token;                                                                                         
                 
     size_t tokens_to_copy = (offset_position >= this->current_seq_len) ?
-                            0 : (this->current_seq_len - offset_position);                                                                      
-    size_t copy_bytes = tokens_to_copy * bytes_per_token;
-    size_t new_start = this->sink_size * bytes_per_token;                                                                                      
+                            0 : (this->current_seq_len - offset_position);                                                                                                                                                    
 
-    for (size_t layer = 0; layer < this->num_layers; ++layer) {                                                                                
-        std::memmove(this->layers[layer].keys.data() + new_start,
-                    this->layers[layer].keys.data() + offset, copy_bytes);                                                                    
-        std::memmove(this->layers[layer].values.data() + new_start,
-                    this->layers[layer].values.data() + offset, copy_bytes);                                                                  
+    for (size_t layer = 0; layer < this->num_layers; ++layer) {  
+        for (size_t head = 0; head < this->num_kv_heads; ++head) {     
+            size_t head_offset = head * this->max_seq_len * this->head_dim * bytes_per_element;   
+            size_t src_offset = head_offset + offset_position * this->head_dim * bytes_per_element;   
+            size_t dst_offset = head_offset + this->sink_size * this->head_dim * bytes_per_element;
+            size_t copy_bytes = tokens_to_copy * this->head_dim * bytes_per_element;                                                                    
+            std::memmove(this->layers[layer].keys.data() + dst_offset, this->layers[layer].keys.data() + src_offset, copy_bytes);                                                                    
+            std::memmove(this->layers[layer].values.data() + dst_offset, this->layers[layer].values.data() + src_offset, copy_bytes);   
+            
+        } 
+        if (this->precision == CachePrecision::INT8) {
+            std::memmove(this->layers[layer].key_scales.data() + this->sink_size, this->layers[layer].key_scales.data() + offset_position, tokens_to_copy * sizeof(float));
+            std::memmove(this->layers[layer].value_scales.data() + this->sink_size, this->layers[layer].value_scales.data() + offset_position, tokens_to_copy * sizeof(float));
+        }                                                           
     }
-                                                                                                                                                
+
     this->current_seq_len = this->sink_size + tokens_to_copy;
 } 
 
@@ -142,9 +154,13 @@ void KVCache::get_keys_fp16(size_t layer, __fp16* out) const {
         throw std::runtime_error("Cannot get FP16 keys from INT8 cache");
     }
 
-    size_t bytes_per_element = sizeof(__fp16);
-    size_t total_bytes = this->current_seq_len * this->num_kv_heads * this->head_dim * bytes_per_element;
-    std::memcpy(out, this->layers[layer].keys.data(), total_bytes);
+    const __fp16* keys_data = (const __fp16*)this->layers[layer].keys.data();
+    for (size_t head = 0; head < this->num_kv_heads; ++head) {
+        size_t src_head_offset = head * this->max_seq_len * this->head_dim;
+        size_t dst_head_offset = head * this->current_seq_len * this->head_dim;
+        size_t copy_bytes = this->current_seq_len * this->head_dim * sizeof(__fp16);
+        std::memcpy(out + dst_head_offset, keys_data + src_head_offset, copy_bytes);
+    }
 }
 
 void KVCache::get_values_fp16(size_t layer, __fp16* out) const {
@@ -158,29 +174,43 @@ void KVCache::get_values_fp16(size_t layer, __fp16* out) const {
         throw std::runtime_error("Cannot get FP16 values from INT8 cache");
     }
 
-    size_t bytes_per_element = sizeof(__fp16);
-    size_t total_bytes = this->current_seq_len * this->num_kv_heads * this->head_dim * bytes_per_element;
-    std::memcpy(out, this->layers[layer].values.data(), total_bytes);
+    const __fp16* values_data = (const __fp16*)this->layers[layer].values.data();
+    for (size_t head = 0; head < this->num_kv_heads; ++head) {
+        size_t src_head_offset = head * this->max_seq_len * this->head_dim;
+        size_t dst_head_offset = head * this->current_seq_len * this->head_dim;
+        size_t copy_bytes = this->current_seq_len * this->head_dim * sizeof(__fp16);
+        std::memcpy(out + dst_head_offset, values_data + src_head_offset, copy_bytes);
+    }
 }
 
-const int8_t* KVCache::get_keys_int8(size_t layer) const {
-    if (layer >= this->num_layers) {
-        throw std::invalid_argument("Invalid layer index");
+void KVCache::get_keys_int8(size_t layer, int8_t* out) const {
+    if (layer >= this->num_layers) throw std::invalid_argument("Invalid layer index");
+    if (out == nullptr) throw std::invalid_argument("Null output buffer");
+    if (this->precision != CachePrecision::INT8) throw std::runtime_error("Cannot get INT8 keys from FP16 cache");
+
+    const int8_t* keys_data = (const int8_t*)this->layers[layer].keys.data();
+    for (size_t head = 0; head < this->num_kv_heads; ++head) {
+        size_t src_head_offset = head * this->max_seq_len * this->head_dim;
+        size_t dst_head_offset = head * this->current_seq_len * this->head_dim;
+        size_t copy_bytes = this->current_seq_len * this->head_dim;
+
+        memcpy(out + dst_head_offset, keys_data + src_head_offset, copy_bytes);
     }
-    if (this->precision != CachePrecision::INT8) {
-        throw std::runtime_error("Cannot get INT8 keys from FP16 cache");
-    }
-    return (const int8_t*)this->layers[layer].keys.data();
 }
 
-const int8_t* KVCache::get_values_int8(size_t layer) const {
-    if (layer >= this->num_layers) {
-        throw std::invalid_argument("Invalid layer index");
+void KVCache::get_values_int8(size_t layer, int8_t* out) const {
+    if (layer >= this->num_layers) throw std::invalid_argument("Invalid layer index");
+    if (out == nullptr) throw std::invalid_argument("Null output buffer");
+    if (this->precision != CachePrecision::INT8) throw std::runtime_error("Cannot get INT8 values from FP16 cache");
+
+    const int8_t* values_data = (const int8_t*)this->layers[layer].values.data();
+    for (size_t head = 0; head < this->num_kv_heads; ++head) {
+        size_t src_head_offset = head * this->max_seq_len * this->head_dim;
+        size_t dst_head_offset = head * this->current_seq_len * this->head_dim;
+        size_t copy_bytes = this->current_seq_len * this->head_dim;
+
+        memcpy(out + dst_head_offset, values_data + src_head_offset, copy_bytes);
     }
-    if (this->precision != CachePrecision::INT8) {
-        throw std::runtime_error("Cannot get INT8 values from FP16 cache");
-    }
-    return (const int8_t*)this->layers[layer].values.data();
 }
 
 const float* KVCache::get_key_scales(size_t layer) const {

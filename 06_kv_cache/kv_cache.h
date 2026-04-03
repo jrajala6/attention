@@ -42,8 +42,8 @@ struct KVCache {
     void get_values_fp16(size_t layer, __fp16* out) const;
 
     // Direct int8 access (for hybrid attention)
-    const int8_t* get_keys_int8(size_t layer) const;
-    const int8_t* get_values_int8(size_t layer) const;
+    void get_keys_int8(size_t layer, int8_t* out) const;
+    void get_values_int8(size_t layer, int8_t* out) const;
     const float* get_key_scales(size_t layer) const;
     const float* get_value_scales(size_t layer) const;
 

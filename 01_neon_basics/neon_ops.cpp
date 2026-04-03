@@ -94,3 +94,71 @@ void weighted_accumulate(float* accum, const __fp16* vec, float weight, size_t l
     for (size_t i = (len / 8) * 8; i < len; ++i)
         accum[i] += weight * vec[i];
 }
+
+float dot_product_int8_fp16_dequant(const int8_t* a_int8, const __fp16* b_fp16, float scale, size_t len) {
+      float32x4_t accum1 = vdupq_n_f32(0);                                                                             
+      float32x4_t accum2 = vdupq_n_f32(0);                                                                             
+      float32x4_t scale_vec = vdupq_n_f32(scale);                                                                      
+                                                                                                                       
+      size_t vec_len = (len / 8) * 8;
+      for (size_t i = 0; i < vec_len; i += 8) {                                                                        
+          int8x8_t a_i8 = vld1_s8(a_int8 + i);                                                                         
+   
+          int16x8_t a_i16 = vmovl_s8(a_i8);
+          int32x4_t a_i32_low = vmovl_s16(vget_low_s16(a_i16));                                                        
+          int32x4_t a_i32_high = vmovl_s16(vget_high_s16(a_i16));
+          float32x4_t a_low = vcvtq_f32_s32(a_i32_low);                                                                
+          float32x4_t a_high = vcvtq_f32_s32(a_i32_high);                                                              
+                                                                                                                       
+          a_low = vmulq_f32(a_low, scale_vec);
+          a_high = vmulq_f32(a_high, scale_vec);                                                                       
+   
+          float16x8_t curr_b = vld1q_f16(b_fp16 + i);
+          float32x4_t b_low = vcvt_f32_f16(vget_low_f16(curr_b));                                                      
+          float32x4_t b_high = vcvt_f32_f16(vget_high_f16(curr_b));
+                                                                                                                       
+          accum1 = vfmaq_f32(accum1, a_low, b_low);                                                                    
+          accum2 = vfmaq_f32(accum2, a_high, b_high);
+      }                                                                                                                
+   
+      float32x4_t final_accum = vaddq_f32(accum1, accum2);                                                             
+      float dot_prod = vaddvq_f32(final_accum);
+                                                                                                                       
+      for (size_t i = vec_len; i < len; ++i)                                                                           
+          dot_prod += (float)a_int8[i] * scale * (float)b_fp16[i];                                                     
+                                                                                                                       
+      return dot_prod;
+  }     
+
+
+void weighted_accumulate_int8_fp16_dequant(const int8_t* a_int8, float scale, float* O_temp, float attention_score, size_t len)
+{
+    float32x4_t scale_vec = vdupq_n_f32(scale); 
+    float32x4_t attention_score_vec = vdupq_n_f32(attention_score);
+
+    size_t vec_len = (len / 8) * 8;
+    for (size_t i = 0; i < vec_len; i += 8) {                                                                        
+        int8x8_t a_i8 = vld1_s8(a_int8 + i);                                                                         
+ 
+        int16x8_t a_i16 = vmovl_s8(a_i8);
+        int32x4_t a_i32_low = vmovl_s16(vget_low_s16(a_i16));                                                        
+        int32x4_t a_i32_high = vmovl_s16(vget_high_s16(a_i16));
+        float32x4_t a_low = vcvtq_f32_s32(a_i32_low);                                                                
+        float32x4_t a_high = vcvtq_f32_s32(a_i32_high);                                                              
+                                                                                                                      
+        a_low = vmulq_f32(a_low, scale_vec);
+        a_high = vmulq_f32(a_high, scale_vec); 
+
+        float32x4_t accum_low = vld1q_f32(O_temp + i);
+        float32x4_t accum_high = vld1q_f32(O_temp + i + 4);
+
+        accum_low = vfmaq_f32(accum_low, a_low, attention_score_vec);
+        accum_high = vfmaq_f32(accum_high, a_high, attention_score_vec);
+
+        vst1q_f32(O_temp + i, accum_low);
+        vst1q_f32(O_temp + i + 4, accum_high);
+    }
+
+    for (size_t i = (len / 8) * 8; i < len; ++i)
+        O_temp[i] += scale * (float)a_int8[i] * attention_score;
+}
