@@ -67,9 +67,7 @@ void quantize_fp16_to_int8_grouped(const __fp16 *src, int8_t *dst,
                                    size_t group_size) {
   size_t num_groups = (total_elements + group_size - 1) / group_size;
 
-  parallel_for(
-      num_groups, 1,
-      [src, dst, scales, total_elements, group_size](size_t group_idx) {
+  auto quantize_group = [src, dst, scales, total_elements, group_size](size_t group_idx) {
         size_t group_start = group_idx * group_size;
         size_t current_group_size =
             std::min(group_size, total_elements - group_start);
@@ -97,7 +95,17 @@ void quantize_fp16_to_int8_grouped(const __fp16 *src, int8_t *dst,
 
         fp16_to_int8(src + group_start, dst + group_start, current_group_size,
                      scales[group_idx]);
-      });
+  };
+
+  // Skip thread pool overhead for small inputs — the synchronization cost
+  // dominates when quantizing a single token (e.g. 1-2 groups of 64 elements).
+  const size_t MIN_GROUPS_FOR_THREADING = 64;
+  if (num_groups < MIN_GROUPS_FOR_THREADING) {
+    for (size_t g = 0; g < num_groups; ++g)
+      quantize_group(g);
+  } else {
+    parallel_for(num_groups, MIN_GROUPS_FOR_THREADING, quantize_group);
+  }
 }
 
 void dequantize_int8_to_fp32(const int8_t *src, float *dst, float scale,

@@ -104,53 +104,6 @@ void KVCache::append(size_t layer, const __fp16* new_keys, const __fp16* new_val
     }
 }
 
-void KVCache::append_int8(size_t layer, const int8_t* new_keys, const int8_t* new_values,
-                         const float* key_scales, const float* value_scales, size_t num_new_tokens) {
-    if (layer >= this->num_layers) {
-        throw std::invalid_argument("Invalid layer index");
-    }
-    if (new_keys == nullptr || new_values == nullptr) {
-        throw std::invalid_argument("Null key or value data");
-    }
-    if (this->precision != CachePrecision::INT8) {
-        throw std::runtime_error("Cannot append INT8 data to FP16 cache");
-    }
-    if ((key_scales == nullptr || value_scales == nullptr) && this->precision == CachePrecision::INT8) {
-        throw std::invalid_argument("INT8 cache requires quantization scales");
-    }
-    if (num_new_tokens == 0) {
-        return; 
-    }
-
-    if (layer == 0) {
-        this->evict_if_needed(num_new_tokens);
-    }
-
-    int8_t* keys_data = (int8_t*)this->layers[layer].keys.data();
-    int8_t* values_data = (int8_t*)this->layers[layer].values.data();
-    size_t nqg = this->num_quant_groups();
-    size_t scales_per_token = this->num_kv_heads * nqg;
-
-    for (size_t head = 0; head < this->num_kv_heads; ++head) {
-        size_t src_offset = head * num_new_tokens * this->head_dim;
-
-        size_t head_base = head * this->max_seq_len * this->head_dim;
-        size_t dst_offset = head_base + this->current_seq_len * this->head_dim;
-
-        memcpy(keys_data + dst_offset, new_keys + src_offset, num_new_tokens * this->head_dim);
-        memcpy(values_data + dst_offset, new_values + src_offset, num_new_tokens * this->head_dim);
-    }
-
-    size_t dst_scale_start = this->scale_index(this->current_seq_len, 0);
-    memcpy(this->layers[layer].key_scales.data() + dst_scale_start, key_scales, num_new_tokens * scales_per_token * sizeof(float));
-    memcpy(this->layers[layer].value_scales.data() + dst_scale_start, value_scales, num_new_tokens * scales_per_token * sizeof(float));
-
-    if (layer == this->num_layers - 1) {
-        this->current_seq_len += num_new_tokens;
-        this->total_seq_len += num_new_tokens;
-    }
-}
-
 void KVCache::evict_if_needed(size_t additional_tokens) {
     size_t future_seq_len = this->current_seq_len + additional_tokens;                                                                         
     if (future_seq_len <= this->window_size) return;

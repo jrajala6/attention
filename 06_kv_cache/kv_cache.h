@@ -38,9 +38,6 @@ struct KVCache {
     void append(size_t layer, const __fp16* new_keys, const __fp16* new_values,
                 size_t num_new_tokens);
 
-    void append_int8(size_t layer, const int8_t* new_keys, const int8_t* new_values,
-                    const float* key_scales, const float* value_scales, size_t num_new_tokens);
-
     void evict_if_needed(size_t additional_tokens = 0);
 
     void get_keys_fp16(size_t layer, __fp16* out) const;
