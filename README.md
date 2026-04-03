@@ -95,7 +95,7 @@ Baseline: naive O(n^2) attention materializing full attention matrix.
 | 512 | 77.1 | 11.9 | 6.5x | 0.03 GB |
 | 1K | 307.1 | 42.3 | 7.3x | 0.13 GB |
 | 2K | 1247.7 | 184.8 | 6.8x | 0.53 GB |
-| 4K | 5113.8 | 685.5 | 7.5x | 1.07 GB |
+| 4K | 5113.8 | 685.5 | 7.5x | 2.15 GB |
 
 **GQA head scaling** (batch=1, seq_len=1024, head_dim=128):
 
@@ -143,7 +143,7 @@ INT8-cached KV + FP16-new tokens, all speedups vs naive baseline.
 - `03_quantization/`: FP16/INT8 conversion and group quantization
 - `04_naive_attention/`: Baseline scalar attention implementation
 - `05_flash_attention/`: Optimized attention with online softmax and SIMD
-- `05_flash_attention_2d/`: Advanced 2D tiling implementation (research phase)
+- `05_flash_attention_2d/`: Advanced 2D tiling implementation (in progress)
 - `06_kv_cache/`: KV cache implementation with sliding window
 - `07_hybrid_attention/`: Production decode path kernel
 
@@ -164,3 +164,5 @@ Each approach demonstrates different memory-compute trade-offs fundamental to mo
 - FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness (Dao 2022)
 - GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints (Ainslie 2023)
 - Efficient Streaming Language Models with Attention Sinks (Xiao 2023)
+
+Inspired by [Cactus Compute](https://github.com/cactus-compute/cactus).
