@@ -1,11 +1,11 @@
-# Build: O3 optimization + Apple M1 NEON
+# Build: O3 optimization + Apple Silicon NEON
 CXX = clang++
 CXXFLAGS = -std=c++11 -O3 -march=native -mtune=native -Wall -Wextra -Wpedantic -I. -Icommon
 LDFLAGS = -pthread
 
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
-    CXXFLAGS += -mcpu=apple-m1 -ffast-math
+    CXXFLAGS += -mcpu=native -ffast-math
 endif
 ifeq ($(UNAME_S),Linux)
     CXXFLAGS += -mcpu=native -ffast-math

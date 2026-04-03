@@ -165,23 +165,63 @@ void weighted_accumulate_int8_fp16_dequant(const int8_t* a_int8, float scale, fl
 
 float dot_product_int8_fp16_dequant_grouped(const int8_t* a_int8, const __fp16* b_fp16,
                                             const float* scales, size_t group_size, size_t len) {
-    float result = 0.0f;
-    size_t num_groups = (len + group_size - 1) / group_size;
-    for (size_t g = 0; g < num_groups; ++g) {
-        size_t offset = g * group_size;
-        size_t glen = (offset + group_size <= len) ? group_size : (len - offset);
-        result += dot_product_int8_fp16_dequant(a_int8 + offset, b_fp16 + offset, scales[g], glen);
+    float32x4_t accum1 = vdupq_n_f32(0);
+    float32x4_t accum2 = vdupq_n_f32(0);
+
+    size_t i = 0;
+    size_t vec_len = (len / 8) * 8;
+
+    for (; i < vec_len; i += 8) {
+        // Switch scale at group boundaries
+        float32x4_t scale_vec = vdupq_n_f32(scales[i / group_size]);
+
+        int8x8_t a_i8 = vld1_s8(a_int8 + i);
+        int16x8_t a_i16 = vmovl_s8(a_i8);
+        float32x4_t a_low = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(a_i16))), scale_vec);
+        float32x4_t a_high = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(a_i16))), scale_vec);
+
+        float16x8_t curr_b = vld1q_f16(b_fp16 + i);
+        float32x4_t b_low = vcvt_f32_f16(vget_low_f16(curr_b));
+        float32x4_t b_high = vcvt_f32_f16(vget_high_f16(curr_b));
+
+        accum1 = vfmaq_f32(accum1, a_low, b_low);
+        accum2 = vfmaq_f32(accum2, a_high, b_high);
     }
-    return result;
+
+    float dot_prod = vaddvq_f32(vaddq_f32(accum1, accum2));
+
+    for (; i < len; ++i)
+        dot_prod += (float)a_int8[i] * scales[i / group_size] * (float)b_fp16[i];
+
+    return dot_prod;
 }
 
 void weighted_accumulate_int8_fp16_dequant_grouped(const int8_t* a_int8, const float* scales,
                                                    float* O_temp, float attention_score,
                                                    size_t group_size, size_t len) {
-    size_t num_groups = (len + group_size - 1) / group_size;
-    for (size_t g = 0; g < num_groups; ++g) {
-        size_t offset = g * group_size;
-        size_t glen = (offset + group_size <= len) ? group_size : (len - offset);
-        weighted_accumulate_int8_fp16_dequant(a_int8 + offset, scales[g], O_temp + offset, attention_score, glen);
+    float32x4_t attn_vec = vdupq_n_f32(attention_score);
+
+    size_t i = 0;
+    size_t vec_len = (len / 8) * 8;
+
+    for (; i < vec_len; i += 8) {
+        float32x4_t scale_vec = vdupq_n_f32(scales[i / group_size]);
+
+        int8x8_t a_i8 = vld1_s8(a_int8 + i);
+        int16x8_t a_i16 = vmovl_s8(a_i8);
+        float32x4_t a_low = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(a_i16))), scale_vec);
+        float32x4_t a_high = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(a_i16))), scale_vec);
+
+        float32x4_t accum_low = vld1q_f32(O_temp + i);
+        float32x4_t accum_high = vld1q_f32(O_temp + i + 4);
+
+        accum_low = vfmaq_f32(accum_low, a_low, attn_vec);
+        accum_high = vfmaq_f32(accum_high, a_high, attn_vec);
+
+        vst1q_f32(O_temp + i, accum_low);
+        vst1q_f32(O_temp + i + 4, accum_high);
     }
+
+    for (; i < len; ++i)
+        O_temp[i] += scales[i / group_size] * (float)a_int8[i] * attention_score;
 }

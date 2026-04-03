@@ -48,7 +48,7 @@ make clean
 | KV cache | Sliding window eviction, sink tokens, and int8 storage |
 | Hybrid attention | Int8-cached and fp16-new tokens evaluated in a single kernel |
 
-## Benchmarks (Apple M1)
+## Benchmarks (Apple M4)
 
 Run `make bench` to reproduce. All speedups are measured against the naive/baseline implementation.
 
@@ -132,9 +132,9 @@ INT8-cached KV + FP16-new tokens, all speedups vs naive baseline.
 
 | Configuration | Naive (us) | Hybrid (us) | Speedup | GOPS |
 |---------------|------------|-------------|---------|------|
-| 128seq, 8/2h, d=128 | 1153 | 416 | 2.8x | 60.5 |
-| 256seq, 8/2h, d=128 | 4457 | 1665 | 2.7x | 60.5 |
-| 128seq, 32/8h, d=128 | 4536 | 1401 | 3.2x | 71.8 |
+| 128seq, 8/2h, d=128 | 1073 | 213 | 5.0x | 118.4 |
+| 256seq, 8/2h, d=128 | 4272 | 809 | 5.3x | 124.5 |
+| 128seq, 32/8h, d=128 | 4375 | 914 | 4.8x | 110.1 |
 
 ## Project Structure
 
